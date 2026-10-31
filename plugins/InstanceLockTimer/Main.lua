@@ -354,6 +354,8 @@ local function CloseEditor(row, commit)
             row.record.name = text;
             if (currentManager ~= nil) then currentManager:Save(); end
         end
+        -- repaint the label from the record so the new name is visible
+        row.name:SetText(row.record.name);
     end
     -- detaching the editor fires FocusLost; the row.editor guard above
     -- makes that a no-op instead of a double commit
