@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Plugin>
+  <Information>
+    <Name>InstanceLockTimer</Name>
+    <Author>Ebceys</Author>
+    <Version>1.0</Version>
+    <Description>One-hour instance lock timers with per-day usage counter.</Description>
+  </Information>
+  <Package>InstanceLockTimer.Main</Package>
+  <Configuration Apartment="InstanceLockTimer" />
+</Plugin>
