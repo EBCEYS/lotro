@@ -12,6 +12,10 @@ eye on how many you have used today.
 
 *The same three timers after renaming them — click a timer's name to edit it.*
 
+![Timer start offer](./imgs/InstanceLockTimer3.png)
+
+*The plugin will offer you to start timer on mission acception.*
+
 ## Features
 
 - **One-click 1h timer** — the big button starts a standard one-hour instance
@@ -29,6 +33,12 @@ eye on how many you have used today.
 - **Cancel early** — the "X" on a row removes that timer; if you started it
   during the current server day, the daily counter gets that start back
   (it never goes below 0).
+- **Mission offers** — the moment you accept a mission, the game writes
+  "New Quest: Mission: *\<name\>*" to chat and the plugin opens a small
+  offer window: one click starts a 1h timer named after that mission.
+  The warp announcement ("New Quest: *\<name\>*" without the "Mission:"
+  prefix) is deliberately ignored, so the offer appears only on
+  accepting. English client text only.
 - **Survives logout** — timers are stored per character with absolute expiry
   times, so they keep running through logout, `/ui reload` and relogging. If
   the server day changed while you were offline, the daily counter resets on
@@ -36,35 +46,23 @@ eye on how many you have used today.
 
 ## Installation
 
-1. Create the plugin folder:
+1. Copy the `InstanceLockTimer` folder (containing `Main.lua` and
+   `InstanceLockTimer.plugin`) into the game's plugin directory:
 
    ```
-   Documents\The Lord of the Rings Online\Plugins\InstanceLockTimer\
+   Documents\The Lord of the Rings Online\Plugins\
    ```
 
-2. Copy `Main.lua` and `InstanceLockTimer.plugin` into that folder.
+   so that the files end up as:
 
-   The `.plugin` file is a plain text file with this content:
-
-   ```xml
-   <?xml version="1.0" encoding="utf-8"?>
-   <Plugin>
-     <Information>
-       <Name>InstanceLockTimer</Name>
-       <Author>Ebceys</Author>
-       <Version>1.0</Version>
-       <Description>One-hour instance lock timers with per-day usage counter.</Description>
-     </Information>
-     <Package>InstanceLockTimer.Main</Package>
-     <Configuration Apartment="InstanceLockTimer" />
-   </Plugin>
+   ```
+   Documents\The Lord of the Rings Online\Plugins\InstanceLockTimer\Main.lua
+   Documents\The Lord of the Rings Online\Plugins\InstanceLockTimer\InstanceLockTimer.plugin
    ```
 
-   > If you install under an author folder instead, e.g.
-   > `Plugins\Ebceys\InstanceLockTimer\`, change the entry point to
-   > `<Package>Ebceys.InstanceLockTimer.Main</Package>`.
+   Nothing needs to be created, changed or edited.
 
-3. In game, load the plugin:
+2. In game, load the plugin:
 
    ```
    /plugins load InstanceLockTimer
@@ -103,7 +101,10 @@ The tweakable values are in the `CONFIGURATION` section at the top of
 | `DAY_RESET_UTC_HOUR` | `7` | UTC hour at which the daily counter resets |
 | `DAILY_MAX` | `100` | Daily gradient: green at 0, red at `DAILY_MAX` |
 | `MAX_VISIBLE_ROWS` | `8` | Timer rows shown before a "+N more" line appears |
+| `OFFER_MISSION_TIMERS` | `true` | Watch chat for accepted missions and offer a named timer |
 
-## Author
+## Author & license
 
-**Ebceys** — version 1.0.
+**Ebceys** — version 1.1.
+
+Released under the MIT License.

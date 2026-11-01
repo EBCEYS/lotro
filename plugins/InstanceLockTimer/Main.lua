@@ -1,6 +1,6 @@
 --[[=========================================================================
 
-    InstanceLockTimer v1.0  --  The Lord of the Rings Online plugin
+    InstanceLockTimer v1.1  --  The Lord of the Rings Online plugin
     -------------------------------------------------------------------
 
     * Press the button to start a 1-hour instance lock timer.
@@ -16,6 +16,9 @@
       the daily counter (it never goes below 0).
     * Click the name of a timer to rename it: type the new name and
       press Enter (or click anywhere else) to confirm, Escape to cancel.
+    * When you take a mission, the chat line "New Quest: Mission:
+      <name>" opens a small offer window - one click starts a 1h
+      timer named after that mission (English client text only).
     * Everything is saved per character: active timers survive logout
       and /ui reload (they keep running in real time), and the daily
       counter survives relogging. If the server day changed while you
@@ -23,28 +26,14 @@
 
     INSTALLATION
     ------------
-    1. Create this folder:
-       Documents\The Lord of the Rings Online\Plugins\InstanceLockTimer\
-    2. Save this file as Main.lua inside that folder.
-    3. In the SAME folder create a text file "InstanceLockTimer.plugin"
-       with EXACTLY this content:
-         <?xml version="1.0" encoding="utf-8"?>
-         <Plugin>
-           <Information>
-             <Name>InstanceLockTimer</Name>
-             <Author>Ebceys</Author>
-             <Version>1.0</Version>
-             <Description>One-hour instance lock timers with per-day usage counter.</Description>
-           </Information>
-           <Package>InstanceLockTimer.Main</Package>
-           <Configuration Apartment="InstanceLockTimer" />
-         </Plugin>
-       (The <Package> entry is the code entrypoint: it must be the dot path
-       from the Plugins root to this file minus the .lua extension. If you
-       install under an author folder instead, e.g.
-       Plugins\Ebceys\InstanceLockTimer\, the entry must be
-       <Package>Ebceys.InstanceLockTimer.Main</Package>.)
-    4. In game:  /plugins load InstanceLockTimer
+    1. Copy the InstanceLockTimer folder (containing Main.lua and
+       InstanceLockTimer.plugin) into the game Plugins directory:
+         Documents\The Lord of the Rings Online\Plugins\
+       so that the files end up as:
+         ...\Plugins\InstanceLockTimer\Main.lua
+         ...\Plugins\InstanceLockTimer\InstanceLockTimer.plugin
+       Nothing needs to be created or edited.
+    2. In game:  /plugins load InstanceLockTimer
 
     COMMANDS
     --------
@@ -69,7 +58,7 @@ import "Turbine.UI.Lotro";
 ------------------------------------------------------------------------
 
 local PLUGIN_NAME        = "InstanceLockTimer";
-local PLUGIN_VERSION     = "1.0";
+local PLUGIN_VERSION     = "1.1";
 
 local TIMER_DURATION     = 3600;  -- length of a standard timer, seconds (1 hour)
 local DAY_RESET_UTC_HOUR = 7;     -- hour (UTC) when the daily counter resets
@@ -77,6 +66,9 @@ local DAILY_MAX          = 100;   -- daily gradient: green at 0 -> red at DAILY_
 
 local MAX_VISIBLE_ROWS   = 8;     -- timer rows shown before a "+N more" line appears
 local SAVE_KEY           = "InstanceLockTimerData";
+
+local OFFER_MISSION_TIMERS = true;  -- watch chat for accepted missions and
+                                    -- offer a named 1h timer (English client)
 
 local W                  = 300;   -- window width
 local INNER_W            = W - 40; -- width of the content area
@@ -194,15 +186,16 @@ function Manager:GetDailyCount()
 end
 
 -- Starts a new timer of the given duration (seconds) and counts its start
--- towards the current server day.
-function Manager:StartTimer(duration, startedAtText)
+-- towards the current server day. "name" is optional; without it the timer
+-- gets the next "Timer N" default name.
+function Manager:StartTimer(duration, startedAtText, name)
     local now = GetServerTime();
     local rec = {
         expiresAt     = now + duration,
         startedAt     = now,
         duration      = duration,
         startedAtText = startedAtText or "",
-        name          = "Timer " .. (#self.timers + 1),
+        name          = name or "Timer " .. (#self.timers + 1),
     };
     table.insert(self.timers, rec);
 
@@ -694,6 +687,87 @@ function tickControl:Update()
     TickRows(now);
 end;
 tickControl:SetWantsUpdates(true);
+
+------------------------------------------------------------------------
+-- MISSION WATCHER
+--
+-- The moment you accept a mission, the game writes
+-- "New Quest: Mission: <name>" to chat; warping to the mission area
+-- later writes "New Quest: <name>" WITHOUT the "Mission:" prefix, which
+-- we deliberately ignore. The accept message fires exactly once per
+-- mission run, so every occurrence opens the offer window: one click
+-- starts a 1h timer named after the mission.
+-- The text is matched on the English client; other locales will not
+-- trigger the offer.
+------------------------------------------------------------------------
+
+-- top-level window => GLOBAL on purpose (see the UI section: LOTRO
+-- collects unreferenced local controls after loading)
+offerWin = nil;
+local offerLabel, offerStartButton, offerSkipButton;
+
+local function ShowMissionOffer(name)
+    if (offerWin == nil) then
+        offerWin = Turbine.UI.Lotro.Window();
+        offerWin:SetSize(280, 132);
+        offerWin:SetText("Mission Started");
+
+        offerLabel = Turbine.UI.Label();
+        offerLabel:SetParent(offerWin);
+        offerLabel:SetPosition(15, 42);
+        offerLabel:SetSize(250, 20);
+        offerLabel:SetFont(Turbine.UI.Lotro.Font.TrajanPro14);
+        offerLabel:SetTextAlignment(Turbine.UI.ContentAlignment.MiddleCenter);
+        offerLabel:SetForeColor(Turbine.UI.Color(1, 1, 1));
+
+        offerStartButton = Turbine.UI.Lotro.Button();
+        offerStartButton:SetParent(offerWin);
+        offerStartButton:SetPosition(15, 74);
+        offerStartButton:SetSize(120, 24);
+        offerStartButton:SetText("Start 1h Timer");
+        offerStartButton.Click = function()
+            if (offerWin.missionName ~= nil) then
+                Manager:StartTimer(TIMER_DURATION, GetClockStamp(), offerWin.missionName);
+            end
+            offerWin:SetVisible(false);
+        end
+
+        offerSkipButton = Turbine.UI.Lotro.Button();
+        offerSkipButton:SetParent(offerWin);
+        offerSkipButton:SetPosition(145, 74);
+        offerSkipButton:SetSize(120, 24);
+        offerSkipButton:SetText("Ignore");
+        offerSkipButton.Click = function()
+            offerWin:SetVisible(false);
+        end
+    end
+
+    offerWin.missionName = name;
+    offerLabel:SetText(name);
+    -- centre the offer on screen, below the middle of the view
+    offerWin:SetPosition(
+        math.floor((Turbine.UI.Display.GetWidth() - 280) / 2), 100);
+    offerWin:SetVisible(true);
+end
+
+-- chat handler (the pattern used by LotroPointTracker). Any handler
+-- another plugin installed first is chained, so both keep working.
+local previousChatHandler = Turbine.Chat.Received;
+Turbine.Chat.Received = function(sender, args)
+    if (previousChatHandler ~= nil) then
+        pcall(previousChatHandler, sender, args);
+    end
+    if (not OFFER_MISSION_TIMERS) then return; end
+    local message = args and args.Message;
+    if (type(message) ~= "string") then return; end
+
+    -- only the "New Quest: Mission: <name>" announcement, on any chat
+    -- channel (the quest channel the game uses for it is not documented)
+    local name = string.match(message, "^New Quest:%s*Mission:%s*(.-)%s*$");
+    if (name == nil or name == "") then return; end
+
+    ShowMissionOffer(name);
+end
 
 ------------------------------------------------------------------------
 -- SLASH COMMANDS
