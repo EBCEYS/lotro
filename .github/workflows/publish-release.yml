@@ -21,9 +21,11 @@ jobs:
 
       - name: Zip plugins
         run: |
+          shopt -s nullglob
           mkdir -p release-assets
-          for plugin_dir in Plugins/*/; do
-            [ -d "$plugin_dir" ] && zip -r "release-assets/$(basename "$plugin_dir").zip" "$plugin_dir"
+          for plugin_dir in plugins/*/; do
+            compgen -G "${plugin_dir}*.plugin" > /dev/null || continue
+            zip -r "release-assets/$(basename "$plugin_dir").zip" "$plugin_dir"
           done
 
       - name: Create release
