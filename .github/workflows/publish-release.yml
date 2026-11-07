@@ -25,7 +25,8 @@ jobs:
           mkdir -p release-assets
           for plugin_dir in plugins/*/; do
             compgen -G "${plugin_dir}*.plugin" > /dev/null || continue
-            zip -r "release-assets/$(basename "$plugin_dir").zip" "$plugin_dir"
+            plugin_name=$(basename "$plugin_dir")
+            (cd plugins && zip -r "../release-assets/$plugin_name.zip" "$plugin_name")
           done
 
       - name: Create release
