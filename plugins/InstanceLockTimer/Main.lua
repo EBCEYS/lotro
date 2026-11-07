@@ -1,6 +1,6 @@
 --[[=========================================================================
 
-    InstanceLockTimer v1.1  --  The Lord of the Rings Online plugin
+    InstanceLockTimer v1.1.1  --  The Lord of the Rings Online plugin
     -------------------------------------------------------------------
 
     * Press the button to start a 1-hour instance lock timer.
@@ -58,10 +58,10 @@ import "Turbine.UI.Lotro";
 ------------------------------------------------------------------------
 
 local PLUGIN_NAME        = "InstanceLockTimer";
-local PLUGIN_VERSION     = "1.1";
+local PLUGIN_VERSION     = "1.1.1";
 
 local TIMER_DURATION     = 3600;  -- length of a standard timer, seconds (1 hour)
-local DAY_RESET_UTC_HOUR = 7;     -- hour (UTC) when the daily counter resets
+local DAY_RESET_UTC_HOUR = 8;     -- hour (UTC) when the daily counter resets
 local DAILY_MAX          = 100;   -- daily gradient: green at 0 -> red at DAILY_MAX
 
 local MAX_VISIBLE_ROWS   = 8;     -- timer rows shown before a "+N more" line appears

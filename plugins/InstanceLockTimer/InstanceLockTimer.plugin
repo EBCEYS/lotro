@@ -3,7 +3,7 @@
   <Information>
     <Name>InstanceLockTimer</Name>
     <Author>Ebceys</Author>
-    <Version>1.1</Version>
+    <Version>1.1.1</Version>
     <Description>One-hour instance lock timers with per-day usage counter.</Description>
   </Information>
   <Package>InstanceLockTimer.Main</Package>
