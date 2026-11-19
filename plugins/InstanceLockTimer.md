@@ -26,8 +26,8 @@ eye on how many you have used today.
   started during the current server day, drawn in a gradient colour from green
   (0) to red (100) with a matching progress bar.
 - **Server day reset** — the daily counter resets at the server day change
-  (07:00 UTC). Active timers are *not* reset; they keep counting down until
-  they expire.
+  (by default 07:00 UTC in summer, 08:00 UTC in winter; configurable). Active
+  timers are *not* reset; they keep counting down until they expire.
 - **Rename timers** — click a timer's name to rename it: press Enter (or click
   anywhere else) to confirm, Escape to cancel.
 - **Cancel early** — the "X" on a row removes that timer; if you started it
@@ -76,6 +76,7 @@ eye on how many you have used today.
 | Command | Description |
 | --- | --- |
 | `/ilt show` | Show the main window |
+| `/ilt options` | Open the plugin settings in the plugin manager |
 | `/ilt add <minutes>` | Start a custom-length timer (e.g. `/ilt add 1` for a quick test) |
 | `/ilt resetdaily` | Reset the daily counter |
 | `/ilt help` | Command overview |
@@ -87,24 +88,40 @@ eye on how many you have used today.
 - Timer state is saved per character via the game's PluginData storage:
   each timer stores its absolute expiry time (server time), so nothing has to
   keep running while you are logged out.
-- The daily counter belongs to the *server day*, which changes at 07:00 UTC.
+- The daily counter belongs to the *server day*, which changes at the
+  configured reset time (07:00 UTC in summer, 08:00 UTC in winter by default).
 - Timer names and the window position are saved alongside the timers.
+
+## Settings
+
+Open the plugin manager, select **InstanceLockTimer** and press **Options**
+(or type `/ilt options`). Changes apply immediately and are saved
+account-wide.
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| Reset time (UTC, summer) | `07:00` | Server day change in summer time (hour and minutes, 5-minute steps) |
+| Winter time | on | In winter the daily reset happens one hour later |
+| Detect winter time automatically | on | Switch winter/summer time on the US daylight saving dates (2nd Sunday of March / 1st Sunday of November) |
+| Offer mission timers | on | Watch chat for accepted missions and offer a named timer |
+| Width | `300` | Main window width, 240–600 px |
+| Visible timer rows | `8` | Timer rows shown before a "+N more" line appears (1–20); the height follows the number of timers |
+
+The panel also shows when the next daily reset happens. Changing the reset
+settings does not reset today's counter.
 
 ## Tuning
 
-The tweakable values are in the `CONFIGURATION` section at the top of
+A few remaining constants are in the `CONFIGURATION` section at the top of
 `Main.lua`:
 
 | Constant | Default | Meaning |
 | --- | --- | --- |
 | `TIMER_DURATION` | `3600` | Length of a standard timer, seconds |
-| `DAY_RESET_UTC_HOUR` | `7` | UTC hour at which the daily counter resets |
 | `DAILY_MAX` | `100` | Daily gradient: green at 0, red at `DAILY_MAX` |
-| `MAX_VISIBLE_ROWS` | `8` | Timer rows shown before a "+N more" line appears |
-| `OFFER_MISSION_TIMERS` | `true` | Watch chat for accepted missions and offer a named timer |
 
 ## Author & license
 
-**Ebceys** — version 1.1.
+**Ebceys** — version 1.3.
 
 Released under the MIT License.
