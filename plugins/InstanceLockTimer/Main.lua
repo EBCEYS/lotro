@@ -53,6 +53,13 @@
     /ilt resetdaily     reset the daily counter
     /ilt help           command overview
 
+    LICENSE
+    -------
+    "THE BEER-WARE LICENSE" (Revision 42):
+    https://github.com/EBCEYS wrote this file. As long as you retain this
+    notice you can do whatever you want with it. If we meet some day, and
+    you think this stuff is worth it, you can buy me a beer in return.
+
 =========================================================================]]
 
 import "Turbine";

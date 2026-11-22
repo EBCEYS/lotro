@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Plugin>
+  <Information>
+    <Name>CharacterStats</Name>
+    <Author>Ebceys</Author>
+    <Version>1.0.0</Version>
+    <Description>Shows your character's stats and equipped items in collapsible groups and lets you share them to chat. /cstats help</Description>
+  </Information>
+  <Package>CharacterStats.Main</Package>
+  <Configuration Apartment="CharacterStats" />
+</Plugin>

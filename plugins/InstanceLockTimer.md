@@ -124,4 +124,4 @@ A few remaining constants are in the `CONFIGURATION` section at the top of
 
 **Ebceys** — version 1.3.
 
-Released under the MIT License.
+Released under the [Beer-ware License](../LICENSE).
