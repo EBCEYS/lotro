@@ -11,7 +11,7 @@
 ------------------------------------------------------------------------
 
 CS.PLUGIN_NAME    = "CharacterStats";
-CS.PLUGIN_VERSION = "1.0.0";
+CS.PLUGIN_VERSION = "1.0.1";
 CS.SAVE_KEY       = "CharacterStats_Settings";
 CS.SAVE_VERSION   = 2;            -- 2: item descriptions expanded by default
 

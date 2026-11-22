@@ -191,6 +191,6 @@ position, the collapsed groups, the share channel and the current share page.
 
 ## Author & license
 
-**Ebceys**, version 1.0.0.
+**Ebceys**, version 1.0.1.
 
 Released under the [Beer-ware License](../LICENSE).

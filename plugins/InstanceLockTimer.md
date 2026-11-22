@@ -122,6 +122,6 @@ A few remaining constants are in the `CONFIGURATION` section at the top of
 
 ## Author & license
 
-**Ebceys** — version 1.3.
+**Ebceys** — version 1.3.1.
 
 Released under the [Beer-ware License](../LICENSE).

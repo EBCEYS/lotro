@@ -1,6 +1,6 @@
 --[[=========================================================================
 
-    InstanceLockTimer v1.3.0  --  The Lord of the Rings Online plugin
+    InstanceLockTimer v1.3.1  --  The Lord of the Rings Online plugin
     -------------------------------------------------------------------
 
     * Press the button to start a 1-hour instance lock timer.
@@ -71,7 +71,7 @@ import "Turbine.UI.Lotro";
 ------------------------------------------------------------------------
 
 local PLUGIN_NAME        = "InstanceLockTimer";
-local PLUGIN_VERSION     = "1.3.0";
+local PLUGIN_VERSION     = "1.3.1";
 
 local TIMER_DURATION     = 3600;  -- length of a standard timer, seconds (1 hour)
 local DAILY_MAX          = 100;   -- daily gradient: green at 0 -> red at DAILY_MAX
@@ -1143,6 +1143,22 @@ if (thisPlugin ~= nil) then
     end
 end
 
+-- Opens this plugin's page in the plugin manager. The U49 docs name
+-- Turbine.LotroPluginManager.ShowOptions, the in-game API dump only has
+-- Turbine.PluginManager.ShowOptions - neither is confirmed, so try both.
+local function OpenOptions()
+    if (thisPlugin ~= nil) then
+        local managers = { Turbine.LotroPluginManager, Turbine.PluginManager };
+        for i = 1, 2 do
+            local manager = managers[i];
+            if (type(manager) == "table" and type(manager.ShowOptions) == "function") then
+                if (pcall(manager.ShowOptions, thisPlugin)) then return; end
+            end
+        end
+    end
+    Turbine.Shell.WriteLine("Open the plugin manager and select " .. PLUGIN_NAME .. " -> Options.");
+end
+
 ------------------------------------------------------------------------
 -- MASTER CLOCK
 --
@@ -1199,12 +1215,7 @@ function command:Execute(commandName, args)
         win:SetVisible(true);
         win:Activate();
     elseif (word == "options" or word == "settings") then
-        local manager = Turbine.LotroPluginManager;
-        if (thisPlugin ~= nil and manager ~= nil and type(manager.ShowOptions) == "function") then
-            pcall(manager.ShowOptions, thisPlugin);
-        else
-            Turbine.Shell.WriteLine("Open the plugin manager and select InstanceLockTimer -> Options.");
-        end
+        OpenOptions();
     elseif (word == "add") then
         local minutes = tonumber(rest);
         if (minutes == nil or minutes <= 0 or minutes > 1440) then

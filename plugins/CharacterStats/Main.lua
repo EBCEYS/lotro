@@ -1,6 +1,6 @@
 --[[=========================================================================
 
-    CharacterStats v1.0.0  --  The Lord of the Rings Online plugin
+    CharacterStats v1.0.1  --  The Lord of the Rings Online plugin
     ----------------------------------------------------------------
 
     * A window with your character's current stats in collapsible groups:

@@ -156,12 +156,19 @@ function CS.IconWindow.SetShown(show)
     CS.OptionsPanel.Refresh();
 end
 
--- Opens the plugin manager options (guarded: not available everywhere).
+-- Opens the plugin manager options. The U49 docs name
+-- Turbine.LotroPluginManager.ShowOptions, the in-game API dump only has
+-- Turbine.PluginManager.ShowOptions - neither is confirmed, so try both
+-- and fall back to a hint.
 function CS.OpenOptions()
-    local manager = Turbine.LotroPluginManager;
-    if (CS.thisPlugin ~= nil and manager ~= nil and type(manager.ShowOptions) == "function") then
-        pcall(manager.ShowOptions, CS.thisPlugin);
-    else
-        Turbine.Shell.WriteLine("Open the plugin manager and select CharacterStats -> Options.");
+    if (CS.thisPlugin ~= nil) then
+        local managers = { Turbine.LotroPluginManager, Turbine.PluginManager };
+        for i = 1, 2 do
+            local manager = managers[i];
+            if (type(manager) == "table" and type(manager.ShowOptions) == "function") then
+                if (pcall(manager.ShowOptions, CS.thisPlugin)) then return; end
+            end
+        end
     end
+    Turbine.Shell.WriteLine("Open the plugin manager and select " .. CS.PLUGIN_NAME .. " -> Options.");
 end
