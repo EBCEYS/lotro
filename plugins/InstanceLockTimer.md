@@ -40,9 +40,39 @@ eye on how many you have used today.
   prefix) is deliberately ignored, so the offer appears only on
   accepting. English client text only.
 - **Survives logout** — timers are stored per character with absolute expiry
-  times, so they keep running through logout, `/ui reload` and relogging. If
+  times, so they keep running through logout, relogging and
+  `/plugins unload` + `/plugins load`. If
   the server day changed while you were offline, the daily counter resets on
   load.
+- **Screen icon** — a small gold-framed "ILT" icon gives quick access to the
+  main window (see below).
+
+## Icon
+
+The plugin puts a small "ILT" icon on the screen. The first time, it is
+placed next to the main window: to the left of it, or to the right, above or
+below it if there is no room on that side. After that it stays where you
+drag it.
+
+- **Left click** — shows the main window when it is hidden. When the main
+  window is shown, a click hides it, and also closes an open mission offer
+  window (the offer is dismissed; no timer is started).
+- **Left drag** — moves the icon (unless it is locked). Dragging a locked
+  icon does nothing — it doesn't count as a click.
+- **Right click** — opens a menu:
+  1. **Lock icon / Unlock icon** — locks the icon in place so it can't be
+     dragged by accident (also in the settings). The text shows what the
+     item will do.
+  2. **Show main window / Hide main window** — only the main window.
+  3. **Options...** — opens the plugin settings.
+- **HUD toggle (F12)** — hides the icon, the main window and an open mission
+  offer together with the game's HUD, and brings them back on the next
+  press. While the HUD is hidden, `/ilt show` / `/ilt hide` still work and
+  are remembered.
+
+The icon position and whether the main window is shown are remembered per
+character, so a hidden window stays hidden after relogging or
+`/plugins unload` + `/plugins load`.
 
 ## Installation
 
@@ -76,6 +106,8 @@ eye on how many you have used today.
 | Command | Description |
 | --- | --- |
 | `/ilt show` | Show the main window |
+| `/ilt hide` | Hide the main window |
+| `/ilt toggle` | Show the main window if it is hidden, hide it if it is shown |
 | `/ilt options` | Open the plugin settings in the plugin manager |
 | `/ilt add <minutes>` | Start a custom-length timer (e.g. `/ilt add 1` for a quick test) |
 | `/ilt resetdaily` | Reset the daily counter |
@@ -90,7 +122,8 @@ eye on how many you have used today.
   keep running while you are logged out.
 - The daily counter belongs to the *server day*, which changes at the
   configured reset time (07:00 UTC in summer, 08:00 UTC in winter by default).
-- Timer names and the window position are saved alongside the timers.
+- Timer names, the window position, whether the window is shown and the icon
+  position are saved alongside the timers.
 
 ## Settings
 
@@ -106,6 +139,7 @@ account-wide.
 | Offer mission timers | on | Watch chat for accepted missions and offer a named timer |
 | Width | `300` | Main window width, 240–600 px |
 | Visible timer rows | `8` | Timer rows shown before a "+N more" line appears (1–20); the height follows the number of timers |
+| Lock icon position | off | The screen icon can't be dragged (same as **Lock icon** in the icon menu) |
 
 The panel also shows when the next daily reset happens. Changing the reset
 settings does not reset today's counter.
@@ -122,6 +156,6 @@ A few remaining constants are in the `CONFIGURATION` section at the top of
 
 ## Author & license
 
-**Ebceys** — version 1.3.1.
+**Ebceys** — version 1.4.0.
 
 Released under the [Beer-ware License](../LICENSE).

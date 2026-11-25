@@ -1,9 +1,19 @@
 --[[=========================================================================
 
-    InstanceLockTimer v1.3.1  --  The Lord of the Rings Online plugin
+    InstanceLockTimer v1.4.0  --  The Lord of the Rings Online plugin
     -------------------------------------------------------------------
 
     * Press the button to start a 1-hour instance lock timer.
+    * A small "ILT" screen icon: left click shows the main window when it
+      is hidden, and hides it (together with an open mission offer, which
+      is dismissed without starting a timer) when it is shown. Left drag
+      moves the icon, right click opens a menu (lock / unlock the icon
+      position, show / hide the main window, options). By default the
+      icon sits next to the main window (left of it, or right / above /
+      below when there is no room). The icon position and whether the
+      main window is shown are remembered per character.
+    * The HUD toggle (F12) hides the icon, the main window and an open
+      mission offer, and restores them on the next press.
     * An "Active" counter shows how many timers are running; it decreases
       automatically whenever a timer expires.
     * A "Today" counter counts how many timers you started during the
@@ -21,9 +31,9 @@
       <name>" opens a small offer window - one click starts a 1h
       timer named after that mission (English client text only).
     * Everything is saved per character: active timers survive logout
-      and /ui reload (they keep running in real time), and the daily
-      counter survives relogging. If the server day changed while you
-      were offline, the daily counter resets on load.
+      and /plugins unload + load (they keep running in real time), and
+      the daily counter survives relogging. If the server day changed
+      while you were offline, the daily counter resets on load.
 
     SETTINGS (plugin manager -> InstanceLockTimer -> Options, or /ilt options)
     --------
@@ -31,6 +41,7 @@
     * Winter time (+1 hour), set manually or detected automatically
     * Offer mission timers on/off
     * Main window width and number of visible timer rows
+    * Lock icon position
     Settings are stored account-wide.
 
     INSTALLATION
@@ -47,6 +58,8 @@
     COMMANDS
     --------
     /ilt show           show the main window
+    /ilt hide           hide the main window
+    /ilt toggle         show / hide the main window
     /ilt options        open the settings in the plugin manager
     /ilt add <minutes>  start a custom-length timer (handy for testing:
                         "/ilt add 1" starts a 1-minute test timer)
@@ -71,7 +84,7 @@ import "Turbine.UI.Lotro";
 ------------------------------------------------------------------------
 
 local PLUGIN_NAME        = "InstanceLockTimer";
-local PLUGIN_VERSION     = "1.3.1";
+local PLUGIN_VERSION     = "1.4.0";
 
 local TIMER_DURATION     = 3600;  -- length of a standard timer, seconds (1 hour)
 local DAILY_MAX          = 100;   -- daily gradient: green at 0 -> red at DAILY_MAX
@@ -88,6 +101,7 @@ local DEFAULT_SETTINGS = {
     offerMissions = true,  -- watch chat for accepted missions (English client)
     windowWidth   = 300,
     visibleRows   = 8,     -- timer rows shown before a "+N more" line appears
+    iconLocked    = false, -- screen icon cannot be dragged
 };
 
 local MIN_WIDTH, MAX_WIDTH, WIDTH_STEP = 240, 600, 20;
@@ -106,6 +120,16 @@ local DAY_SECONDS        = 86400;
 
 local ACTION_ENTER       = 162;
 local ACTION_ESCAPE      = 145;
+local ACTION_HUD_TOGGLE  = 0x100000B3;  -- "toggle HUD" (F12 by default)
+
+-- screen icon (looks like the CharacterStats icon)
+local ICON_SIZE          = 36;
+local ICON_GAP           = 8;      -- default gap between the icon and the main window
+local DRAG_THRESHOLD     = 3;      -- px before a left press becomes a drag
+local COL_GOLD           = Turbine.UI.Color(1, 0.82, 0.30);   -- icon, options headers
+local COL_BLACK          = Turbine.UI.Color(0, 0, 0);
+local COL_ICON_BG        = Turbine.UI.Color(0.85, 0.08, 0.07, 0.05);   -- ARGB
+local COL_ICON_BG_HOVER  = Turbine.UI.Color(0.95, 0.20, 0.16, 0.08);
 
 ------------------------------------------------------------------------
 -- STATE / FORWARD DECLARATIONS
@@ -114,6 +138,10 @@ local ACTION_ESCAPE      = 145;
 local settings;         -- user settings, see DEFAULT_SETTINGS
 local W, INNER_W;       -- window width and width of its content area
 local SaveAll;          -- defined in the PERSISTENCE section
+local SyncWinVisible;   -- defined in the PERSISTENCE section
+local unloaded = false; -- set by OnUnload (CLEANUP section)
+local hudHidden = false;   -- the game HUD is hidden (F12), see SCREEN ICON
+local hudApplying = false; -- windows are being hidden / restored for the HUD
 
 ------------------------------------------------------------------------
 -- UTILITIES
@@ -272,6 +300,9 @@ local function LoadSettings()
         local value = saved[key];
         -- numbers may come back as strings depending on the client locale
         if (type(default) == "number") then value = tonumber(value); end
+        if (type(default) == "boolean" and type(value) == "string") then
+            value = (value == "true");
+        end
         if (type(value) ~= type(default)) then value = default; end
         s[key] = value;
     end
@@ -473,9 +504,10 @@ end
 -- USER INTERFACE
 ------------------------------------------------------------------------
 
--- "win", "offerWin", "optionsPanel" and "tickControl" are GLOBALS on
--- purpose: LOTRO garbage-collects any control whose last Lua reference is
--- a local that goes out of scope when the script finishes loading. That
+-- "win", "offerWin", "optionsPanel", "iconWin", "iconMenu" and
+-- "tickControl" are GLOBALS on purpose: LOTRO garbage-collects any
+-- control whose last Lua reference is a local that goes out of scope
+-- when the script finishes loading. That
 -- silently kills the update loop (frozen text, bars that never move,
 -- timers that only expire on the next /plugins load). Everything else
 -- hangs off those, and the engine keeps the child controls of a live
@@ -703,11 +735,19 @@ local function BuildWindow(manager, data)
     win:SetPosition(tonumber(data.winX) or 150, tonumber(data.winY) or 150);
     -- the title has to stay short: the LOTRO title bar clips long text
     win:SetText("Lock Timer");
-    win:SetVisible(true);
+    win:SetVisible(data.winVisible ~= false);
 
     -- remember the window position a few seconds after it is dragged
     win.PositionChanged = function()
         posDirtyTicks = 4;
+    end
+
+    -- remember whether the window is shown (icon, commands, title-bar X)
+    win.VisibleChanged = function()
+        SyncWinVisible();
+    end
+    win.Closed = function()
+        SyncWinVisible();
     end
 
     -- the main button: press to start an hour timer
@@ -807,11 +847,28 @@ SaveAll = function()
             data.winX = win:GetLeft();
             data.winY = win:GetTop();
         end
+        if (iconWin ~= nil) then
+            data.iconX = iconWin:GetLeft();
+            data.iconY = iconWin:GetTop();
+        end
         -- the 4th parameter (an optional completion callback) is passed
         -- explicitly as nil: identical at runtime, but it satisfies API
         -- definition sets that mark it as required
         Turbine.PluginData.Save(Turbine.DataScope.Character, SAVE_KEY, data, nil);
     end);
+end
+
+-- Stores whether the main window is shown. data.winVisible is only
+-- changed here (not in SaveAll), so hiding the window during unload or
+-- for the HUD toggle never persists "hidden"; unchanged states do not
+-- save again.
+SyncWinVisible = function()
+    if (unloaded or hudApplying or data == nil or win == nil) then return; end
+    local visible = win:IsVisible();
+    if (data.winVisible ~= visible) then
+        data.winVisible = visible;
+        pcall(SaveAll);
+    end
 end
 
 ------------------------------------------------------------------------
@@ -823,6 +880,8 @@ W = settings.windowWidth;
 INNER_W = W - 40;
 
 data = LoadData();
+if (type(data.winVisible) == "string") then data.winVisible = (data.winVisible ~= "false"); end
+if (type(data.winVisible) ~= "boolean") then data.winVisible = true; end
 Manager:Initialize(data);
 BuildWindow(Manager, data);
 
@@ -924,13 +983,13 @@ Turbine.Chat.Received = OnChatReceived;
 
 local PANEL_W = 520;
 local LEFT    = 20;
-local COLOR_HEADER = Turbine.UI.Color(1, 0.82, 0.3);
+local COLOR_HEADER = COL_GOLD;
 local COLOR_TEXT   = Turbine.UI.Color(0.9, 0.9, 0.9);
 local COLOR_HINT   = Turbine.UI.Color(0.65, 0.65, 0.65);
 
 -- GLOBAL on purpose (see the UI section)
 optionsPanel = Turbine.UI.Control();
-optionsPanel:SetSize(PANEL_W, 420);
+optionsPanel:SetSize(PANEL_W, 480);
 
 local optionControls = { };
 local updatingOptions = false;
@@ -1020,6 +1079,7 @@ local function RefreshOptions()
     c.offer:SetChecked(settings.offerMissions);
     c.width:SetText(tostring(settings.windowWidth));
     c.rows:SetText(tostring(settings.visibleRows));
+    c.iconLocked:SetChecked(settings.iconLocked);
     updatingOptions = false;
     RefreshResetInfo();
 end
@@ -1116,6 +1176,18 @@ local function BuildOptionsPanel()
     OptionLabel("The height follows the number of timers, up to the visible rows.",
         LEFT, y, PANEL_W - 2 * LEFT, Turbine.UI.Lotro.Font.Verdana12, COLOR_HINT);
 
+    -- screen icon
+    y = y + 34;
+    OptionHeader("Icon", y);
+    y = y + 32;
+    optionControls.iconLocked = OptionCheckBox("Lock icon position", LEFT, y,
+        function(checked)
+            ChangeSettings(function(s) s.iconLocked = checked; end);
+        end);
+    y = y + 22;
+    OptionLabel("Left click the icon to show / hide the main window, right click for a menu.",
+        LEFT, y, PANEL_W - 2 * LEFT, Turbine.UI.Lotro.Font.Verdana12, COLOR_HINT);
+
     -- defaults
     y = y + 34;
     local defaults = Turbine.UI.Lotro.Button();
@@ -1160,6 +1232,232 @@ local function OpenOptions()
 end
 
 ------------------------------------------------------------------------
+-- SCREEN ICON
+--
+-- A small frameless window (same look as the CharacterStats icon):
+-- left click shows / hides the main window, left drag moves the icon
+-- (unless locked), right click opens the context menu, the HUD toggle
+-- (F12) hides / restores the icon and the plugin windows.
+-- "iconWin" and "iconMenu" are GLOBALS on purpose (see the UI section).
+------------------------------------------------------------------------
+
+local function ShowMainWindow(show)
+    win:SetVisible(show);
+    if (show) then win:Activate(); end
+    SyncWinVisible();
+end
+
+local function ToggleMainWindow()
+    ShowMainWindow(not win:IsVisible());
+end
+
+-- Left click on the icon: hides the main window together with an open
+-- mission offer (the offer is dismissed without starting a timer), or
+-- shows only the main window.
+local function IconClick()
+    if (win:IsVisible()) then
+        ShowMainWindow(false);
+        HideMissionOffer();
+    else
+        ShowMainWindow(true);
+    end
+end
+
+local function ClampIconPosition(x, y)
+    local sw, sh = Turbine.UI.Display.GetWidth(), Turbine.UI.Display.GetHeight();
+    x, y = math.floor(x), math.floor(y);
+    if (type(sw) == "number" and sw > ICON_SIZE) then x = Clamp(x, 0, sw - ICON_SIZE); end
+    if (type(sh) == "number" and sh > ICON_SIZE) then y = Clamp(y, 0, sh - ICON_SIZE); end
+    return x, y;
+end
+
+-- Default icon position (nothing saved yet): next to the main window's
+-- actual position - left of it, else right of it, above or below,
+-- whichever is the first that stays on screen without overlapping the
+-- window. If none fits, the clamped "left of it" position is used.
+local function GetDefaultIconPosition()
+    local wx, wy = win:GetLeft(), win:GetTop();
+    local ww, wh = win:GetWidth(), win:GetHeight();
+    local candidates = {
+        { wx - ICON_SIZE - ICON_GAP, wy },   -- left
+        { wx + ww + ICON_GAP, wy },          -- right
+        { wx, wy - ICON_SIZE - ICON_GAP },   -- above
+        { wx, wy + wh + ICON_GAP },          -- below
+    };
+    for _, c in ipairs(candidates) do
+        local x, y = ClampIconPosition(c[1], c[2]);
+        local overlaps = (x < wx + ww and x + ICON_SIZE > wx
+            and y < wy + wh and y + ICON_SIZE > wy);
+        if (not overlaps) then return x, y; end
+    end
+    return ClampIconPosition(candidates[1][1], candidates[1][2]);
+end
+
+iconWin = nil;
+iconMenu = nil;
+local iconMenuItems = { };
+local iconDrag;        -- { x, y, moved } while the left button is down
+local offerHiddenByHud = false;
+
+local function IconBorder(x, y, w, h)
+    local c = Turbine.UI.Control();
+    c:SetParent(iconWin);
+    c:SetPosition(x, y);
+    c:SetSize(w, h);
+    c:SetBackColor(COL_GOLD);
+    c:SetMouseVisible(false);
+end
+
+local function ToggleIconLock()
+    ChangeSettings(function(s) s.iconLocked = not s.iconLocked; end);
+end
+
+local function CloseIconMenu()
+    if (iconMenu ~= nil and type(iconMenu.Close) == "function") then
+        pcall(iconMenu.Close, iconMenu);
+    end
+end
+
+local function BuildIconMenu()
+    iconMenu = Turbine.UI.ContextMenu();
+    local items = iconMenu:GetItems();
+
+    local function Add(key, text, onClick)
+        local mi = Turbine.UI.MenuItem(text);
+        mi.Click = function() onClick(); end
+        items:Add(mi);
+        iconMenuItems[key] = mi;
+    end
+
+    Add("lock", "Lock icon", ToggleIconLock);
+    Add("toggle", "Hide main window", ToggleMainWindow);
+    Add("options", "Options...", OpenOptions);
+end
+
+-- Menu texts follow the current state; refreshed right before showing.
+-- The lock item only changes its text (no check mark).
+local function UpdateIconMenu()
+    iconMenuItems.lock:SetText(settings.iconLocked and "Unlock icon" or "Lock icon");
+    iconMenuItems.toggle:SetText(win:IsVisible() and "Hide main window" or "Show main window");
+end
+
+local function ShowIconMenu()
+    UpdateIconMenu();
+    iconMenu:ShowMenu();
+end
+
+--[[
+    HUD toggle (F12), like CharacterStats: hudHidden mirrors the game's
+    HUD state and changes ONLY on the HUD key. Hiding hides the icon, the
+    main window and an open mission offer; restoring shows the icon, the
+    main window if data.winVisible says so, and the offer if it was open.
+    hudApplying keeps SyncWinVisible from saving these changes. Commands
+    while the HUD is hidden show / hide the main window directly (and
+    save it), but never touch hudHidden.
+]]
+local function SetHudHidden(hidden)
+    hudHidden = hidden;
+    hudApplying = true;
+    pcall(function()
+        if (hidden) then
+            iconDrag = nil;
+            CloseIconMenu();
+            offerHiddenByHud = (offerWin ~= nil and offerWin:IsVisible());
+            if (offerHiddenByHud) then offerWin:SetVisible(false); end
+            win:SetVisible(false);
+            iconWin:SetVisible(false);
+        else
+            iconWin:SetVisible(true);
+            win:SetVisible(data.winVisible == true);
+            if (offerHiddenByHud and offerWin ~= nil and offerWin.missionName ~= nil) then
+                offerWin:SetVisible(true);
+            end
+            offerHiddenByHud = false;
+        end
+    end);
+    hudApplying = false;
+end
+
+local function BuildIcon()
+    iconWin = Turbine.UI.Window();
+    iconWin:SetSize(ICON_SIZE, ICON_SIZE);
+    local x, y = tonumber(data.iconX), tonumber(data.iconY);
+    if (x ~= nil and y ~= nil) then
+        iconWin:SetPosition(ClampIconPosition(x, y));
+    else
+        iconWin:SetPosition(GetDefaultIconPosition());
+    end
+    iconWin:SetBackColor(COL_ICON_BG);
+    iconWin:SetZOrder(10);
+    iconWin:SetMouseVisible(true);
+
+    IconBorder(0, 0, ICON_SIZE, 1);
+    IconBorder(0, ICON_SIZE - 1, ICON_SIZE, 1);
+    IconBorder(0, 0, 1, ICON_SIZE);
+    IconBorder(ICON_SIZE - 1, 0, 1, ICON_SIZE);
+
+    local text = Turbine.UI.Label();
+    text:SetParent(iconWin);
+    text:SetPosition(0, 0);
+    text:SetSize(ICON_SIZE, ICON_SIZE);
+    text:SetFont(Turbine.UI.Lotro.Font.TrajanProBold16);
+    text:SetForeColor(COL_GOLD);
+    text:SetTextAlignment(Turbine.UI.ContentAlignment.MiddleCenter);
+    text:SetFontStyle(Turbine.UI.FontStyle.Outline);
+    text:SetOutlineColor(COL_BLACK);
+    text:SetText("ILT");
+    text:SetMouseVisible(false);
+
+    iconWin.MouseEnter = function() iconWin:SetBackColor(COL_ICON_BG_HOVER); end
+    iconWin.MouseLeave = function() iconWin:SetBackColor(COL_ICON_BG); end
+
+    iconWin.MouseDown = function(sender, args)
+        if (args.Button == Turbine.UI.MouseButton.Left) then
+            iconDrag = { x = args.X, y = args.Y, moved = false };
+        end
+    end
+    -- a press that moves past the threshold is a drag, never a click -
+    -- also on a locked icon, which just does not move
+    iconWin.MouseMove = function(sender, args)
+        if (iconDrag == nil) then return; end
+        if (not iconDrag.moved
+            and math.abs(args.X - iconDrag.x) + math.abs(args.Y - iconDrag.y) < DRAG_THRESHOLD) then
+            return;
+        end
+        iconDrag.moved = true;
+        if (settings.iconLocked) then return; end
+        iconWin:SetPosition(ClampIconPosition(
+            iconWin:GetLeft() + args.X - iconDrag.x, iconWin:GetTop() + args.Y - iconDrag.y));
+    end
+    iconWin.MouseUp = function(sender, args)
+        if (args.Button == Turbine.UI.MouseButton.Left and iconDrag ~= nil) then
+            local moved = iconDrag.moved;
+            iconDrag = nil;
+            if (not moved) then
+                IconClick();
+            elseif (not settings.iconLocked) then
+                pcall(SaveAll);
+            end
+        elseif (args.Button == Turbine.UI.MouseButton.Right) then
+            ShowIconMenu();
+        end
+    end
+
+    -- HUD toggle (F12); a hidden window still receives the key
+    -- (LotroPointTracker, CharacterStats)
+    iconWin:SetWantsKeyEvents(true);
+    iconWin.KeyDown = function(sender, args)
+        if (args.Action ~= ACTION_HUD_TOGGLE) then return; end
+        SetHudHidden(not hudHidden);
+    end
+
+    BuildIconMenu();
+    iconWin:SetVisible(true);
+end
+
+BuildIcon();
+
+------------------------------------------------------------------------
 -- MASTER CLOCK
 --
 -- The standard LOTRO update loop (an invisible control with
@@ -1196,7 +1494,8 @@ tickControl:SetWantsUpdates(true);
 local command = Turbine.ShellCommand();
 
 function command:GetHelp()
-    return "Usage: /ilt show | /ilt options | /ilt add <minutes> | /ilt resetdaily | /ilt help";
+    return "Usage: /ilt show | /ilt hide | /ilt toggle | /ilt options | /ilt add <minutes>"
+        .. " | /ilt resetdaily | /ilt help";
 end
 
 function command:GetShortHelp()
@@ -1212,8 +1511,11 @@ function command:Execute(commandName, args)
     end
 
     if (word == "" or word == "show") then
-        win:SetVisible(true);
-        win:Activate();
+        ShowMainWindow(true);
+    elseif (word == "hide") then
+        ShowMainWindow(false);
+    elseif (word == "toggle") then
+        ToggleMainWindow();
     elseif (word == "options" or word == "settings") then
         OpenOptions();
     elseif (word == "add") then
@@ -1246,7 +1548,8 @@ end
 -- CLEANUP ON PLUGIN UNLOAD
 ------------------------------------------------------------------------
 
-local unloaded = false;
+-- "unloaded" is declared at the top: SyncWinVisible checks it, so hiding
+-- the windows below does not store the main window as hidden
 local function OnUnload()
     if (unloaded) then return; end
     unloaded = true;
@@ -1257,8 +1560,14 @@ local function OnUnload()
         Turbine.Chat.Received = previousChatHandler;
     end
     tickControl:SetWantsUpdates(false);
+    iconDrag = nil;
+    CloseIconMenu();
     HideMissionOffer();
     win:SetVisible(false);
+    if (iconWin ~= nil) then
+        pcall(iconWin.SetWantsKeyEvents, iconWin, false);
+        iconWin:SetVisible(false);
+    end
 end
 
 if (thisPlugin ~= nil) then
