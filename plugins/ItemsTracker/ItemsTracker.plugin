@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Plugin>
+  <Information>
+    <Name>ItemsTracker</Name>
+    <Author>Ebceys</Author>
+    <Version>1.0.0</Version>
+    <Description>Drag items from your bags onto slots to see how many you carry. /itr help</Description>
+  </Information>
+  <Package>ItemsTracker.Main</Package>
+  <Configuration Apartment="ItemsTracker" />
+</Plugin>
