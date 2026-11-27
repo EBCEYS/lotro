@@ -1,12 +1,15 @@
 --[[=========================================================================
 
     ItemsTracker -- CraftingWindow.lua
-    The craft calculator window: profession / mode / recipe selectors,
-    the ingredient preview, "Apply to tracker" (a pick mode in the main
-    window: empty slots are highlighted there and assigned by click,
-    Main.lua AUTO TARGETS), live updates on XP changes, and the
-    calculator's per-character data. Only defines ITR.Craft when it is
-    imported; Main.lua runs ITR.Craft.Init (in pcall) after its BOOT.
+    The craft calculator window: profession / mode / tier / recipe
+    selectors, the ingredient preview, "Apply to tracker" (a pick mode
+    in the main window: empty slots are highlighted there and assigned
+    by click, Main.lua AUTO TARGETS), live updates on XP changes, and
+    the calculator's per-character data. The tier selector also offers
+    the tiers below the current one (a next level reached while the
+    mastery of the previous one is still open); only defines ITR.Craft
+    when it is imported; Main.lua runs ITR.Craft.Init (in pcall) after
+    its BOOT.
 
     "THE BEER-WARE LICENSE" (Revision 42):
     https://github.com/EBCEYS wrote this file. As long as you retain this
@@ -22,7 +25,7 @@ local D = ITR.CraftData;
 
 C.SAVE_KEY = "ItemsTrackerCraft";        -- per character
 
-C.WIN_W, C.WIN_H = 360, 494;
+C.WIN_W, C.WIN_H = 360, 518;
 C.PAD_X          = 20;
 C.INNER_W        = 320;
 C.LIST_W         = 310;                  -- list width, the scroll bar is right of it
@@ -44,6 +47,8 @@ C.WHEEL_STEPS    = 2;
 C.MODES     = { "prof", "mast", "full" };
 C.MODE_TEXT = { prof = "Proficiency", mast = "Mastery", full = "Full tier" };
 C.MODE_DONE = { prof = "proficiency", mast = "mastery", full = "proficiency and mastery" };
+-- D.TierStatus values as shown in the tier menu and /itr craft debug
+C.TIER_STATUS_TEXT = { done = "done", masteryleft = "mastery left", current = "current" };
 C.NO_DATA   = { noplayer = true, noattrs = true, monster = true };
 
 -- row backgrounds (4 arguments = ARGB)
@@ -87,6 +92,10 @@ function C.LoadData()
     if (not D.IsProfessionValue(d.prof)) then d.prof = nil; end
     d.mode = (type(saved.mode) == "string" and C.MODE_TEXT[saved.mode] ~= nil) and saved.mode or "prof";
     d.sort = (saved.sort == "name") and "name" or "xp";
+    -- the selected tier, nil = auto / current tier; the range is checked
+    -- against the active tier on load (C.Setup) and on every C.Refresh
+    d.tier = W(saved.tier);
+    if (d.tier ~= nil and d.tier < 1) then d.tier = nil; end
     local selXp = W(saved.selXp);
     if (type(saved.selName) == "string" and selXp ~= nil) then
         d.selName, d.selXp = ITR.DecodeText(saved.selName), selXp;
@@ -105,7 +114,7 @@ function C.Save()
             d.winX, d.winY = math.floor(w:GetLeft()), math.floor(w:GetTop());
         end
         local out = { winX = d.winX, winY = d.winY, visible = d.visible, prof = d.prof, mode = d.mode,
-            sort = d.sort };
+            sort = d.sort, tier = d.tier };
         if (d.selName ~= nil) then out.selName, out.selXp = ITR.EncodeText(d.selName), d.selXp; end
         local a = d.applied;
         if (a ~= nil) then
@@ -255,9 +264,26 @@ function C.ComputeView()
     if (st.profs == nil) then v.reason = st.profReason or "noattrs"; return v; end
     if (#st.profs == 0) then v.reason = "noprof"; return v; end
     v.progress = D.ReadProgress(C.Info(d.prof));
-    v.tier, v.need, v.phase, v.ok = D.ComputeTarget(v.progress, d.mode);
+    v.active = D.ComputeActiveTier(v.progress);   -- nil: levels unreadable
+    v.tierSelected = (d.tier ~= nil);
+    if (not v.tierSelected) then
+        v.tier, v.need, v.phase, v.ok = D.ComputeTarget(v.progress, d.mode);
+    else
+        -- the fifth return (live) is not taken: live is derived from
+        -- need below, one rule for both paths
+        v.tier, v.need, v.phase, v.ok = D.ComputeSelectedTarget(v.progress, d.mode, d.tier);
+    end
     if (not v.ok) then v.reason = "noprogress"; v.need = 0; return v; end
-    if (v.need <= 0) then v.reason = "complete"; return v; end
+    -- unknown: a selectable tier whose XP the API does not report (a
+    -- skipped mastery); live: the tier the XP currently goes to
+    v.unknown = (v.need == nil);
+    v.live = (not v.unknown and v.need > 0);
+    if (not v.unknown and v.need <= 0) then
+        if (not v.tierSelected) then v.reason = "complete"; return v; end
+        -- a selected past tier: "complete" like today, but its recipes
+        -- are still listed (the ones of that tier that give XP)
+        v.need = 0;
+    end
     local cache = C.Recipes(d.prof);
     v.list = D.FilterRecipes(cache and cache.list, v.tier, d.sort);
     if (d.selName ~= nil) then
@@ -309,19 +335,29 @@ function C.InfoTexts(v, mode)
     if (mode == "prof") then what = "proficiency";
     elseif (mode == "mast") then what = "mastery";
     elseif (v.phase == "prof") then what = "(proficiency, then mastery)";
+    elseif (mode == "full" and v.need ~= nil and v.need <= 0) then
+        what = "(proficiency, then mastery)";   -- a complete tier: both phases
     else what = "(mastery)"; end
     local line = "Tier " .. v.tier .. " " .. what;
+    -- the raw bar readout only describes the selected tier while the XP
+    -- really goes to it; a selected past tier shows a hint instead
+    if (v.unknown) then
+        return line .. ": XP unknown (tier not in progress)", "API reports only the tier in progress";
+    end
     if (v.need <= 0) then line = line .. ": complete"; else line = line .. ": " .. v.need .. " XP left"; end
-    local p = v.progress;
-    local function n(x) return (x ~= nil) and tostring(x) or "?"; end
-    return line, "Proficiency " .. n(p.px) .. " / " .. n(p.pt) .. " - Mastery " .. n(p.mx) .. " / " .. n(p.mt);
+    if (not v.tierSelected or v.live) then
+        local p = v.progress;
+        local function n(x) return (x ~= nil) and tostring(x) or "?"; end
+        return line, "Proficiency " .. n(p.px) .. " / " .. n(p.pt) .. " - Mastery " .. n(p.mx) .. " / " .. n(p.mt);
+    end
+    return line, "API reports only the tier in progress";
 end
 
 function C.EmptyText(v)
     if (v.reason ~= nil and C.NO_DATA[v.reason]) then return "Crafting data is not available for this character."; end
     if (v.reason == "noprof") then return "This character has no crafting profession."; end
     if (v.reason == "noprogress") then return "Profession data is not available."; end
-    if (v.reason == "complete") then return "Nothing left to earn in this mode (tier or profession complete)."; end
+    if (v.need ~= nil and v.need <= 0) then return "Nothing left to earn in this mode (tier or profession complete)."; end
     return "No learned recipe of tier " .. tostring(v.tier)
         .. " gives XP. Learn recipes at a trainer. (/itr craft debug lists the tiers)";
 end
@@ -531,6 +567,9 @@ function C.BuildWindow()
     y = y + 24;
     C.NewLabel(x, y, 80, 20, caption):SetText("Mode:");
     cw.modeBtn = C.NewButton(x + 80, y, 240, 20, "", C.ShowModeMenu);
+    y = y + 24;
+    C.NewLabel(x, y, 80, 20, caption):SetText("Tier:");
+    cw.tierBtn = C.NewButton(x + 80, y, 240, 20, "", C.ShowTierMenu);
     y = y + 26;
     cw.info = C.NewLabel(x, y, C.INNER_W, 16);
     y = y + 16;
@@ -693,6 +732,7 @@ function C.Refresh(full)
     if (st == nil or cw == nil or st.unloaded) then return; end
     st.viewDirty = false;
     if (full or st.profs == nil) then C.ReloadProfessions(); end
+    C.ValidateTier();
     local v = C.ComputeView();
     local d = st.data;
 
@@ -707,6 +747,15 @@ function C.Refresh(full)
     cw.profBtn:SetEnabled(st.profs ~= nil and #st.profs > 0);
     C.SetText(cw.modeBtn, C.MODE_TEXT[d.mode]);
     cw.modeBtn:SetEnabled(st.profs ~= nil and #st.profs > 0);
+    -- "Auto (Tier N)" (the auto-computed current tier) or "Tier N"
+    local tierText = "Auto";
+    if (d.tier ~= nil) then tierText = "Tier " .. d.tier;
+    elseif (v.tier ~= nil) then tierText = "Auto (Tier " .. v.tier .. ")"; end
+    C.SetText(cw.tierBtn, ITR.Shorten(tierText, 34));
+    -- disabled without professions, or while the active tier is not
+    -- readable (the profession's levels are unreadable): the menu would
+    -- offer nothing but "Auto"
+    cw.tierBtn:SetEnabled(st.profs ~= nil and #st.profs > 0 and v.active ~= nil);
     C.SetText(cw.sortBtn, (d.sort == "name") and "By name" or "By XP");
 
     local info, info2 = C.InfoTexts(v, d.mode);
@@ -718,6 +767,11 @@ function C.Refresh(full)
     C.PaintIngredients(v);
     C.PaintButtons();
     C.SetText(cw.status, st.status or "");
+    -- an unknown tier cannot be applied: the hint replaces the last
+    -- status line until a readable tier is selected again
+    if (v.unknown and not ITR.Tracker.IsPicking()) then
+        C.SetText(cw.status, "XP of the selected tier is not reported - select the tier in progress.");
+    end
 end
 
 ------------------------------------------------------------------------
@@ -777,6 +831,38 @@ function C.ShowModeMenu()
     C.ShowMenu(entries);
 end
 
+-- Tier 1 .. active tier, each marked done / mastery left / current, with
+-- "Auto (Tier N)" (the auto-computed current tier) pinned on top.
+function C.ShowTierMenu()
+    C.Refresh(true);
+    local st = ITR.craft;
+    local d = st.data;
+    local entries = { };
+    if (st.profs == nil or #st.profs == 0) then
+        table.insert(entries, { text = "No crafting professions", enabled = false });
+        C.ShowMenu(entries);
+        return;
+    end
+    local v = st.view;
+    -- the label always names the AUTO tier of the mode (ComputeTarget),
+    -- never the tier that happens to be selected
+    local autoText = "Auto";
+    local autoTier = D.ComputeTarget(v.progress, d.mode);
+    if (autoTier ~= nil) then autoText = "Auto (Tier " .. autoTier .. ")"; end
+    table.insert(entries, { text = autoText, checked = (d.tier == nil),
+        onClick = function() C.SelectTier(nil); end });
+    local active = D.ComputeActiveTier(v.progress);
+    if (active ~= nil) then
+        for tier = 1, active do
+            local t = tier;
+            local suffix = " - " .. (C.TIER_STATUS_TEXT[D.TierStatus(v.progress, t)] or "?");
+            table.insert(entries, { text = "Tier " .. t .. suffix, checked = (d.tier == t),
+                onClick = function() C.SelectTier(t); end });
+        end
+    end
+    C.ShowMenu(entries);
+end
+
 -- A recipe / profession / mode change while the pick mode is on: the
 -- pending ingredients belong to the recipe that started it - stop the
 -- picking (nothing is finalized) before switching.
@@ -801,6 +887,35 @@ function C.SelectMode(mode)
     st.data.mode = mode;
     C.Save();
     C.Refresh(false);
+end
+
+-- The selected tier (nil = auto / current tier). The applied session
+-- keeps its own tier (the one it was built from); only a running pick
+-- mode is stopped, like on a profession / mode / recipe change.
+function C.SelectTier(tier)
+    local st = ITR.craft;
+    if (tier == st.data.tier) then return; end
+    C.CancelPickIfRecipeChanged();
+    st.data.tier = tier;
+    C.Save();
+    C.Refresh(false);
+end
+
+-- The selected tier must be 1 .. the active tier of the selected
+-- profession; anything else (garbage, profession switched or relearned)
+-- falls back to auto. Called on load (C.Setup) and on every C.Refresh.
+-- An unreadable active tier (the progress is transiently not available)
+-- is NOT "invalid": the choice is kept and the validation is deferred
+-- until the levels are readable again.
+function C.ValidateTier()
+    local st = ITR.craft;
+    local d = st.data;
+    if (d == nil or d.tier == nil) then return; end
+    local active = D.ComputeActiveTier(D.ReadProgress(C.Info(d.prof)));
+    if (active ~= nil and (d.tier < 1 or d.tier > active)) then
+        d.tier = nil;
+        C.Save();
+    end
 end
 
 function C.ToggleSort()
@@ -1008,9 +1123,29 @@ function C.LiveCheck()
     if (attrs == nil) then return; end
     local info = st.infos[a.prof] or D.GetProfessionInfo(a.prof, attrs);
     if (info == nil) then C.FinishApplied("the profession is not learned any more"); return; end
-    local tier, need, _, ok = D.ComputeTarget(D.ReadProgress(info), a.mode);
+    -- the APPLIED tier, not the selector's one: a tier-up completes the
+    -- session (the applied tier's phase is done then, like the old
+    -- "tier changed" check), and an unknown tier (a skipped mastery the
+    -- API does not report) keeps the applied targets as they are
+    local _, need, _, ok = D.ComputeSelectedTarget(D.ReadProgress(info), a.mode, a.tier);
     if (not ok) then return; end
-    if (tier ~= a.tier or need <= 0) then C.FinishApplied(nil); return; end
+    if (need == nil) then
+        -- the applied tier's XP is not reported any more (a skipped
+        -- mastery, e.g. its proficiency completed mid-session): unlike
+        -- the old "tier changed" finish this is not a completion, the
+        -- applied targets stay as they are - say so once instead of
+        -- freezing silently
+        if (not a.unknownHint) then
+            a.unknownHint = true;
+            local text = "XP of applied tier " .. a.tier .. " is no longer reported"
+                .. " - live updates stopped, targets kept.";
+            ITR.Hint(text);
+            st.status = text;
+            st.viewDirty = true;
+        end
+        return;
+    end
+    if (need <= 0) then C.FinishApplied(nil); return; end
     local cache = C.Recipes(a.prof);
     local entry = C.FindEntry(cache and cache.list, a.tier, a.name, a.xp);
     if (entry == nil) then C.FinishApplied("the applied recipe is not available any more"); return; end
@@ -1136,6 +1271,18 @@ function C.Debug()
         if (ok) then P(C.MODE_TEXT[mode] .. ": tier " .. tier .. ", " .. need .. " XP left");
         else P(C.MODE_TEXT[mode] .. ": progress not available"); end
     end
+    local active = D.ComputeActiveTier(progress);
+    if (active == nil) then
+        P("active tier: not available");
+    else
+        P("active tier: " .. active);
+        local parts = { };
+        for tier = 1, active do
+            table.insert(parts, tier .. ":" .. (C.TIER_STATUS_TEXT[D.TierStatus(progress, tier)] or "?"));
+        end
+        P("tiers: " .. table.concat(parts, " "));
+    end
+    P("selected tier: " .. (st.data.tier ~= nil and tostring(st.data.tier) or "auto"));
     st.viewDirty = true;
 end
 
@@ -1153,10 +1300,33 @@ function C.Command(rest)
         C.CancelPickIfRecipeChanged();
         C.ClearAuto();
         Turbine.Shell.WriteLine(ITR.PLUGIN_NAME .. ": auto targets cleared.");
+    elseif (word == "tier") then
+        -- /itr craft tier <n> selects a tier (1 .. active tier; a tier
+        -- the profession cannot offer any more falls back to auto),
+        -- "auto" is the auto-computed current tier again. The command
+        -- says what was selected, like /itr craft clear does.
+        local arg = string.match(rest or "", "^%s*tier%s+(%S+)%s*$");
+        if (arg == nil) then
+            Turbine.Shell.WriteLine("Usage: /itr craft tier <n>|auto");
+        elseif (string.lower(arg) == "auto") then
+            C.SelectTier(nil);
+            Turbine.Shell.WriteLine(ITR.PLUGIN_NAME .. ": tier selection: auto.");
+        elseif (string.find(arg, "^%d+$") ~= nil) then
+            C.SelectTier(tonumber(arg));
+            local selected = ITR.craft.data.tier;
+            if (selected == nil) then
+                Turbine.Shell.WriteLine(ITR.PLUGIN_NAME .. ": tier " .. arg
+                    .. " is out of range - auto selected.");
+            else
+                Turbine.Shell.WriteLine(ITR.PLUGIN_NAME .. ": tier " .. selected .. " selected.");
+            end
+        else
+            Turbine.Shell.WriteLine("Usage: /itr craft tier <n>|auto");
+        end
     elseif (word == "debug") then
         C.Debug();
     else
-        Turbine.Shell.WriteLine("Usage: /itr craft [show|hide|toggle|clear|debug]");
+        Turbine.Shell.WriteLine("Usage: /itr craft [show|hide|toggle|clear|tier <n>|auto|debug]");
     end
 end
 
@@ -1211,6 +1381,7 @@ function C.Setup()
         end
     end
     C.RehookProfessions();
+    C.ValidateTier();   -- a saved tier the profession does not offer -> auto
     st.applying = false;
     C.ready = true;
     ITR.craftTicker:SetWantsUpdates(true);

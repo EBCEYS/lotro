@@ -5,7 +5,8 @@ many of the items you choose are in your bags: drag an item onto a slot and
 watch its count update live. Set a target count to see your collecting
 progress go from red to green, Ctrl+drag a tracked item straight into
 the auction house search box — and a craft calculator that turns the
-ingredients for your next profession tier into those targets.
+ingredients for the profession tier you choose (any tier up to the one you
+are in) into those targets.
 
 ![Craft Calculator and the Items Tracker window](./imgs/ItemsTracker2.png)
 
@@ -40,9 +41,9 @@ ingredients for your next profession tier into those targets.
   over **yellow** (half) to **green** (target reached), and a thin bar
   along the bottom of the slot shows the progress.
 - **Craft calculator**: a second window (icon menu or `/itr craft`) that
-  picks up where the targets end: choose a profession, a mode and a recipe
-  of the next tier, and it shows the crafts needed for the XP you are
-  missing and the ingredients for them. **Apply to tracker** starts a pick
+  picks up where the targets end: choose a profession, a mode, a tier and a
+  recipe, and it shows the crafts needed for the XP you are missing and the
+  ingredients for them. **Apply to tracker** starts a pick
   mode in which you click the empty slots of the main window that the
   ingredients should go to (see [Craft calculator](#craft-calculator)
   below).
@@ -204,12 +205,24 @@ At the top you pick what to craft:
   - **Full tier**: what is still missing for the whole tier — the rest of
     the proficiency plus its whole mastery (or, once the proficiency of
     the tier is done, just the rest of the mastery).
-
-  The tier you are working on is the number of completed tiers plus one
-  (the levels the game reports are the completed ones).
-- Under the two buttons, one line names the tier and the XP still missing
-  ("Tier 10 proficiency: 12345 XP left"), and a second line shows both
-  progress bars ("Proficiency 1200 / 4000 - Mastery 0 / 6000").
+- **Tier**: which tier the calculator works on. The default **Auto (Tier N)**
+  is the tier you are working on — the number of completed tiers plus one
+  (the levels the game reports are the completed ones). The menu also lists
+  **Tier 1 … Tier N** (N = the highest tier you can craft in), each marked
+  **- done** (the tier is completed), **- mastery left** (its proficiency is
+  done, its mastery still open — for the case "I have the next level, but
+  still want to get the mastery of the previous level") or **- current**
+  (the tier the XP currently goes to).
+- Under the three buttons, one line names the tier and the XP still missing
+  ("Tier 10 proficiency: 12345 XP left"). A tier whose phase is already
+  done says "complete" (a complete past tier in **Full tier** mode is
+  named with the whole tier: "Tier 8 (proficiency, then mastery):
+  complete"), and a tier whose XP the game does not report says
+  "XP unknown (tier not in progress)". The second line shows both progress
+  bars ("Proficiency 1200 / 4000 - Mastery 0 / 6000") while the XP really
+  goes to the selected tier; for a selected past tier it says
+  "API reports only the tier in progress" instead, because the game reports
+  the progress of one tier per phase — the one in progress.
 - **Recipes**: the learned recipes of that tier that give XP, sorted by XP
   reward (**By XP**, **By name** to sort alphabetically). A row reads
   `Name (+XP | xN crafts)` — e.g. **Pipe-weed (+100 | x9 crafts)**: 9 of
@@ -260,6 +273,13 @@ by a selection):
   chat line tells you and the targets are **kept** — pick the next recipe,
   or clear them. The status line at the bottom of the calculator says the
   same, and Apply/Done/Stop picking report there what they did.
+- The applied session always works on the tier it was applied with:
+  changing the tier selector afterwards does not touch it (switching the
+  tier while a pick mode is running stops the picking, nothing is
+  finalized; a tier-up finishes the session with the usual chat line and
+  keeps the targets). A tier whose XP the game does not report any more
+  just stops the live updates — the targets stay as applied until you
+  clear them, and one chat line says so.
 - **Clear auto targets** removes the calculator's targets (the ones you
   turned into manual targets by setting them by hand or re-dropping the
   item stay, as does anything you added yourself). Selecting another
@@ -270,9 +290,14 @@ by a selection):
 *Applying a recipe and picking the slots for its ingredients — the targets
 then count down live while crafting.*
 
-Everything the calculator remembers — the profession, the mode, the sort
-order, the selection, the window's position and whether it is shown, and
-its applied session — is stored **per character**.
+Everything the calculator remembers — the profession, the mode, the
+selected tier, the sort order, the selection, the window's position and
+whether it is shown, and its applied session — is stored **per character**.
+A saved tier the selected profession does not offer any more (it was
+switched or relearned) falls back to **Auto** as soon as the
+profession's levels are readable again — a temporarily unreadable
+crafting progress does not wipe the choice, it only disables the tier
+button until the data is back.
 
 ## Commands
 
@@ -287,7 +312,7 @@ its applied session — is stored **per character**.
 | `/itr target <n> <count>` | Target count of slot *n*, 1–999999 (same rules as the field, as one word: `1,000` works, `1 000` doesn't); `/itr target <n> clear` (or `0`) removes it |
 | `/itr clear <n>` | Clear slot *n*; `/itr clear all` clears every slot |
 | `/itr list` | List the tracked items, their counts and targets ("10 / 20") in chat; calculator targets are marked "(auto)", reached targets "(done)", hidden slots "(hidden)" |
-| `/itr craft show\|hide\|toggle\|clear\|debug` | The craft calculator: show / hide / toggle it; `clear` removes its auto targets (manual targets and slots are kept); `debug` prints the character's crafting data — the professions with their levels, the recipe count and index base, which tiers have XP recipes and the target tier / XP left of each mode (troubleshooting) |
+| `/itr craft show\|hide\|toggle\|clear\|tier <n>\|auto\|debug` | The craft calculator: show / hide / toggle it; `clear` removes its auto targets (manual targets and slots are kept); `tier <n>` selects the tier the calculator works on and answers with the tier selected, `tier auto` is the auto-computed current tier again (an out-of-range tier falls back to auto, and the command says so); `debug` prints the character's crafting data — the professions with their levels, the recipe count and index base, which tiers have XP recipes, the target tier / XP left of each mode, the active tier with each tier's status (done / mastery left / current) and the selected tier (troubleshooting) |
 | `/itr debug` | Print every drop event (slot or window, with coordinates), drop errors and the Ctrl+drag steps in chat (troubleshooting); again to turn it off |
 | `/itr help` | Command overview |
 
@@ -321,9 +346,9 @@ panel; the panel has a hint for it, and one for Ctrl+drag.
 The settings are stored account-wide. The tracked items with their targets, the window and icon
 positions and whether the window is shown are stored per character.
 
-The craft calculator's choices (profession, mode, sort order, selection,
-window position and visibility, its applied session) are stored per
-character.
+The craft calculator's choices (profession, mode, tier, sort order,
+selection, window position and visibility, its applied session) are stored
+per character.
 
 ## Limitations
 
@@ -351,6 +376,11 @@ character.
   second slot instead of updating the tracked one.
 - Recipe tiers are the numbers the game reports; if a recipe list looks
   empty, `/itr craft debug` shows which tiers have XP recipes.
+- The game reports the crafting progress of one tier per phase — the one
+  in progress. A tier selected in the tier selector whose XP is not
+  reported (a skipped mastery) still shows its recipes, but without a
+  crafts number, and **Apply to tracker** is disabled (the status line
+  says so) until you select the tier in progress again.
 - The **pick mode** is not a separate window: it needs the main window
   (Apply shows it). If you hide the main window while picking, the mode
   keeps running — finish it with **Done** / **Stop picking** in the
@@ -369,6 +399,6 @@ character.
 
 ## Author & license
 
-**Ebceys** — version 1.0.0.
+**Ebceys** — version 1.1.0.
 
 Released under the [Beer-ware License](../LICENSE).

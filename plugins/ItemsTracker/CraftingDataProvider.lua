@@ -2,7 +2,9 @@
 
     ItemsTracker -- CraftingDataProvider.lua
     Crafting data for the craft calculator: learned professions, the XP
-    left to the next tier, the recipes of that tier and their direct
+    left to the current or to a selected earlier tier (the tier selector:
+    the next level is reached, but the mastery of the previous one is
+    still to be earned), the recipes of that tier and their direct
     ingredients. Pure functions (no UI); only defines ITR.CraftData when
     it is imported - everything runs later, from ITR.Craft.Init.
 
@@ -19,6 +21,11 @@ local D = ITR.CraftData;
 
 D.MAX_RECIPES     = 5000;   -- GetRecipeCount is clamped to this
 D.MAX_INGREDIENTS = 50;     -- GetIngredientCount is clamped to this
+
+-- status of a selectable tier (D.TierStatus)
+D.TIER_DONE         = "done";         -- the whole tier is completed
+D.TIER_MASTERY_LEFT = "masteryleft";  -- proficiency done, mastery still open
+D.TIER_CURRENT      = "current";      -- the tier the XP currently goes to
 
 -- ProfessionInfo events (documented, unverified in game: the args are
 -- not documented and never read)
@@ -165,6 +172,95 @@ end
 function D.CraftsNeeded(expNeeded, xp)
     if (type(expNeeded) ~= "number" or type(xp) ~= "number" or expNeeded <= 0 or xp <= 0) then return 0; end
     return math.ceil(expNeeded / xp);
+end
+
+-- The highest tier the character can currently craft in: max(pl + 1,
+-- ml + 1) (ml > pl is not expected, the max is defensive). nil if no
+-- level is readable. A maxed profession keeps going one tier past its
+-- levels - with targets of 0 that tier shows "complete", like today.
+function D.ComputeActiveTier(p)
+    if (type(p) ~= "table") then return nil; end
+    if (p.pl == nil and p.ml == nil) then return nil; end
+    return math.max((p.pl or 0) + 1, (p.ml or 0) + 1);
+end
+
+-- Status of a selectable tier: done (both phases completed),
+-- "masteryleft" (proficiency done, its mastery still open - the tier the
+-- tier selector exists for) or "current" (the active tier). nil when
+-- the tier is not selectable (p unreadable, tier < 1 or > active tier).
+-- A maxed profession (both targets 0) has nothing left in its active
+-- tier either: that tier is "done" too, not "current".
+function D.TierStatus(p, tier)
+    if (type(p) ~= "table" or type(tier) ~= "number" or tier < 1) then return nil; end
+    local active = D.ComputeActiveTier(p);
+    if (active == nil or tier > active) then return nil; end
+    if (p.pl ~= nil and p.ml ~= nil and tier <= math.min(p.pl, p.ml)) then return D.TIER_DONE; end
+    if (p.pl ~= nil and tier <= p.pl) then return D.TIER_MASTERY_LEFT; end
+    if ((p.pt or 1) <= 0 and (p.mt or 1) <= 0) then return D.TIER_DONE; end
+    return D.TIER_CURRENT;
+end
+
+--[[
+    targetTier, expNeeded, phase, ok, live for mode "prof", "mast" or
+    "full" and a SELECTED tier; tier nil = the auto tier of the mode (the
+    ComputeTarget result). The API exposes one live bar per phase, tied
+    to the tier currently being advanced, so a selectable tier is in one
+    of three states: live - the tier is that bar, need > 0 (the auto tier
+    behaves exactly like ComputeTarget); complete - the phase of that
+    tier is already done, need 0; unknown - a skipped mastery the API
+    cannot report (only in "mast" / "full", tier > ml + 1): need = nil,
+    the recipes are still readable but no crafts number can be computed.
+    ok = false if a needed value is missing. A "prof" tier beyond
+    pl + 1 (only selectable when ml > pl) counts as complete.
+
+    Nil-tier contract: only C.ComputeView passes nil (and it derives
+    live from need itself, like for the auto tier); C.LiveCheck always
+    passes the numeric applied tier. For a nil tier in "full" with a
+    finished proficiency target (pt <= 0 < mt) this returns the whole
+    mastery target where ComputeTarget returns 0 - no shipped call path
+    hits that, and ComputeTarget stays authoritative for the auto tier.
+]]
+function D.ComputeSelectedTarget(p, mode, tier)
+    if (type(p) ~= "table") then return nil, nil, nil, false, false; end
+    if (mode == "prof") then
+        if (p.pl == nil or p.px == nil or p.pt == nil) then return nil, nil, "prof", false, false; end
+        local t = (tier ~= nil) and tier or (p.pl + 1);
+        if (t ~= p.pl + 1) then return t, 0, "prof", true, false; end
+        local need = Left(p.px, p.pt);
+        return t, need, "prof", true, need > 0;
+    elseif (mode == "mast") then
+        if (p.ml == nil or p.mx == nil or p.mt == nil) then return nil, nil, "mast", false, false; end
+        local t = (tier ~= nil) and tier or (p.ml + 1);
+        if (t <= p.ml) then return t, 0, "mast", true, false; end
+        if (t == p.ml + 1) then
+            local need = Left(p.mx, p.mt);
+            return t, need, "mast", true, need > 0;
+        end
+        return t, nil, "mast", true, false;   -- skipped mastery: not readable
+    elseif (mode == "full") then
+        if (p.pl == nil or p.px == nil or p.pt == nil or p.ml == nil or p.mx == nil or p.mt == nil) then
+            return nil, nil, nil, false, false;
+        end
+        local t = (tier ~= nil) and tier or (p.ml + 1);
+        if (t <= p.ml and t <= p.pl) then return t, 0, "mast", true, false; end
+        local profPart, phase = 0, "mast";
+        if (t > p.pl) then
+            profPart = math.max(0, p.pt - p.px);
+            phase = "prof";
+        end
+        -- the mastery bar only covers the tier in progress: while the
+        -- proficiency of the tier still runs its mastery has not begun
+        -- (whole target), once it is done the bar is this tier's (rest)
+        local mastPart = nil;
+        if (t <= p.ml) then mastPart = 0;
+        elseif (t == p.ml + 1) then
+            mastPart = (t > p.pl) and math.max(0, p.mt) or Left(p.mx, p.mt);
+        end
+        if (mastPart == nil) then return t, nil, phase, true, false; end
+        local need = profPart + mastPart;
+        return t, need, phase, true, need > 0;
+    end
+    return nil, nil, nil, false, false;
 end
 
 ------------------------------------------------------------------------

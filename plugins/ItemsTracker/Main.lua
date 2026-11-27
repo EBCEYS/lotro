@@ -1,6 +1,6 @@
 --[[=========================================================================
 
-    ItemsTracker v1.0.0  --  The Lord of the Rings Online plugin
+    ItemsTracker v1.1.0  --  The Lord of the Rings Online plugin
     -------------------------------------------------------------------
 
     * A small window with item slots. Drag any item from your bags onto
@@ -102,11 +102,13 @@
                         (a slot the craft pick is using refuses)
     /itr list           list the tracked items, counts and targets in chat
                         (calculator targets are marked "(auto)")
-    /itr craft [show|hide|toggle|clear|debug]
+    /itr craft [show|hide|toggle|clear|tier <n>|auto|debug]
                         the craft calculator: show / hide / toggle it,
                         "clear" removes its auto targets (targets set by
-                        hand are kept), "debug" prints the character's
-                        crafting data (troubleshooting)
+                        hand are kept), "tier <n>" works on another tier
+                        of the profession ("auto" is the current one),
+                        "debug" prints the character's crafting data
+                        (troubleshooting)
     /itr debug          print every drop event (slot or window, with
                         coordinates), drop errors and the Ctrl+drag
                         steps (troubleshooting)
@@ -158,7 +160,7 @@ import "ItemsTracker.CraftingWindow";
 ------------------------------------------------------------------------
 
 local PLUGIN_NAME        = "ItemsTracker";
-local PLUGIN_VERSION     = "1.0.0";
+local PLUGIN_VERSION     = "1.1.0";
 
 local SAVE_KEY           = "ItemsTrackerData";       -- per character
 local SETTINGS_KEY       = "ItemsTrackerSettings";   -- account wide
@@ -2934,7 +2936,7 @@ local command = Turbine.ShellCommand();
 
 function command:GetHelp()
     return "Usage: /itr show | hide | toggle | options | slots <1-30> | perrow <1-12>"
-        .. " | target <n> <count>|clear | clear <n>|all | list | craft [show|hide|clear|debug] | debug | help";
+        .. " | target <n> <count>|clear | clear <n>|all | list | craft [show|hide|clear|tier <n>|auto|debug] | debug | help";
 end
 
 function command:GetShortHelp()
